@@ -1,0 +1,88 @@
+--
+- name: Deploy Docker image to Minikube
+  hosts: 192.168.1.39
+  become: yes
+  remote_user: root
+  tasks:
+    - name: Start Minikube
+      ansible.builtin.command:
+        cmd: "minikube start --force"
+      register: minikube_start_output
+      ignore_errors: yes
+
+    - name: Display Minikube start output
+      ansible.builtin.debug:
+        var: minikube_start_output.stdout
+
+    - name: Log in to Docker Hub
+      ansible.builtin.command:
+          cmd: "docker login -u {{ docker_username }} -p {{ docker_password }}"
+      register: docker_login_output
+      ignore_errors: yes
+
+    - name: Pull Docker image from Docker Hub
+      ansible.builtin.command:
+        cmd: "docker pull sbade263/my-web-app:{{ tag }}"
+      register: docker_pull_output
+      ignore_errors: yes
+
+    - name: Create deployment YAML file on VM
+      ansible.builtin.copy:
+        dest: /tmp/deployment.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: my-app
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: my-app
+            template:
+              metadata:
+                labels:
+                  app: my-app
+              spec:
+                containers:
+                - name: my-app-container
+                  image: sbade263/my-web-app:{{tag}}
+                  ports:
+                  - containerPort: 80
+
+    - name: Create service YAML file on VM
+      ansible.builtin.copy:
+        dest: /tmp/service.yaml
+        content: |
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: my-app-service
+          spec:
+            selector:
+              app: my-app
+            ports:
+              - protocol: TCP
+                port: 80
+                targetPort: 80
+            type: NodePort
+
+    - name: Deploy application on Minikube
+      ansible.builtin.command:
+        cmd: "kubectl apply -f /tmp/deployment.yaml"
+      register: deployment_output
+      ignore_errors: yes
+
+    - name: Display deployment output
+      ansible.builtin.debug:
+        var: deployment_output.stdout
+
+    - name: Apply service configuration on Minikube
+      ansible.builtin.command:
+        cmd: "kubectl apply -f /tmp/service.yaml"
+      register: service_output
+      ignore_errors: yes
+
+    - name: Display service output
+      ansible.builtin.debug:
+        var: service_output.stdout
